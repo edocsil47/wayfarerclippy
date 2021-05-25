@@ -326,7 +326,6 @@ class CommentScrapeCog(commands.Cog):
         messages = {"comments": [], "discussions": []}
 
         await self._check_for_user_changes()
-
         for user_id, user in self.users.items():
             comments_page, discussions_page = user["last_comments_page"], user["last_discussions_page"]
             latest_comment, latest_discussion = user["latest_comment"], user["latest_discussion"]
@@ -336,18 +335,18 @@ class CommentScrapeCog(commands.Cog):
                     discussions = requests.get(
                         f"https://community.wayfarer.nianticlabs.com/api/v2/discussions?insertUserID={user_id}"
                         f"&limit=100&page={discussions_page}").json()
+                    if len(discussions) < 1:
+                        break
                     if len(discussions) > 2:
                         discussions.reverse()
-                        for discussion in discussions:
-                            if int(discussion["discussionID"]) not in self.post_ids:
-                                self.post_ids.append(discussion["discussionID"])
-                                self.post_info.append(self._compact_discussion(discussion))
-                            if int(discussion["discussionID"]) > latest_discussion:
-                                latest_discussion = discussion["discussionID"]
-                                messages["discussions"].append(self._format_discussion(discussion, user["name"]))
-                        discussions_page += 1
-                    else:
-                        break
+                    for discussion in discussions:
+                        if int(discussion["discussionID"]) not in self.post_ids:
+                            self.post_ids.append(discussion["discussionID"])
+                            self.post_info.append(self._compact_discussion(discussion))
+                        if int(discussion["discussionID"]) > latest_discussion:
+                            latest_discussion = discussion["discussionID"]
+                            messages["discussions"].append(self._format_discussion(discussion, user["name"]))
+                    discussions_page += 1
                 user["latest_discussion"] = latest_discussion
                 user["last_discussions_page"] = max(discussions_page - 1, 1)
             except Exception as e:
@@ -379,8 +378,6 @@ class CommentScrapeCog(commands.Cog):
                     user["last_comments_page"] = comments_page - 1
             except Exception as e:
                 self.bot.logger.warn(f"Failed to update comments for user {user['name']}\nFull error: {e}")
-
-            await asyncio.sleep(1)
 
         with open(os.path.join('data', 'post_info.json'), 'w') as fd:
             json.dump(self.post_info, fd, indent=4)
