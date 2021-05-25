@@ -173,26 +173,8 @@ class ThroneGame(commands.Cog):
         last_crown_holder = guild.get_member(last_crown_holder_id)
         await asyncio.sleep(1)
 
-        sorted_scores = {k: v for k, v in sorted(scores.items(), key=lambda item: item[1], reverse=True)}
-        scores_msg = ""
-        count = 0
-        self.bot.logger.info(f"End Round: Tallying scores\n{sorted_scores}")
         await game_channel.send(f"The round has ended!")
-        for mem_id, score in sorted_scores.items():
-            try:
-                member = self.bot.get_user(int(mem_id))
-                await asyncio.sleep(1)
-                if member:
-                    mem_str = member.display_name
-                else:
-                    mem_str = str(mem_id)
-                scores_msg += f"{count + 1}. **{mem_str}** - {score} points\n"
-                count += 1
-                if count > 5:
-                    break
-            except Exception as e:
-                self.bot.logger.error(f"Failed to get guild or member with error: {e}")
-                break
+        scores_msg = await self.get_top_scores(scores)
 
         self.bot.logger.info("End Round: Score tallying complete")
         await game_channel.send(f"The round has ended with {last_crown_holder.display_name} on the throne!"
@@ -209,6 +191,29 @@ class ThroneGame(commands.Cog):
         except Exception as e:
             self.bot.logger.warning(f"I FAILED TO GET THE ROLE BECAUSE I'M JUST A DUMB ROBOT: {e}")
         self.bot.logger.info("End Round: Crown role removed")
+
+    async def get_top_scores(self, scores, score_count=5):
+        sorted_scores = {k: v for k, v in sorted(scores.items(), key=lambda item: item[1], reverse=True)}
+        scores_msg = ""
+        count = 0
+        self.bot.logger.info(f"End Round: Tallying scores\n{sorted_scores}")
+
+        for mem_id, score in sorted_scores.items():
+            try:
+                member = self.bot.get_user(int(mem_id))
+                await asyncio.sleep(.1)
+                if member:
+                    mem_str = member.display_name
+                else:
+                    mem_str = str(mem_id)
+                scores_msg += f"{count + 1}. **{mem_str}** - {score} points\n"
+                count += 1
+                if count > score_count:
+                    break
+            except Exception as e:
+                self.bot.logger.error(f"Failed to get guild or member with error: {e}")
+                continue
+        return scores_msg
 
     async def check_clippy_seize(self, guild_id, force=False):
         guild = self.bot.get_guild(int(guild_id))
@@ -260,6 +265,18 @@ class ThroneGame(commands.Cog):
     @commands.has_permissions(manage_roles=True)
     async def _force_seize(self, ctx):
         await self.check_clippy_seize(ctx.guild.id, True)
+
+    @commands.command(name='throne_leaderboard', aliases=['tlb', 'throne_board'])
+    @commands.cooldown(rate=1, per=30, type=BucketType.channel)
+    async def _throne_leaderboard(self, ctx):
+        game_channel_id = self.throne_config[str(ctx.guild.id)]["game_channel_id"]
+        if str(ctx.channel.id) != str(game_channel_id):
+            return await ctx.message.delete()
+        guild_id = ctx.guild.id
+        round_number = self.current_rounds[str(guild_id)].round_number
+        scores = self.throne_config[str(guild_id)]["scores"][str(round_number)]
+        scores_msg = await self.get_top_scores(scores, 10)
+        return await ctx.send(f"Leaderboard for current Throne Game:\n\n{scores_msg}")
 
     # def pretty_time_diff(self, time_diff):
     #     seconds = time_diff % 60
