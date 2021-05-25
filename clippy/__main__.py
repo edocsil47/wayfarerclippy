@@ -68,7 +68,7 @@ async def maint_start(bot):
     try:
         comments_scrape_cog = bot.get_cog("CommentScrapeCog")
         perms_timer_cog = bot.get_cog("PermsTimerCog")
-        #bot.tasks.append(event_loop.create_task(comments_scrape_cog.check_loop()))
+        bot.tasks.append(event_loop.create_task(comments_scrape_cog.check_loop()))
         bot.tasks.append(event_loop.create_task(perms_timer_cog.check_loop()))
         throne_game_cog = bot.get_cog("ThroneGame")
         throne_game_cog.start_loop()

@@ -6,6 +6,8 @@ import re
 import discord
 from discord.ext import commands
 
+from clippy import utils
+
 
 class WordCounter(commands.Cog):
     def __init__(self, bot):
@@ -100,12 +102,12 @@ class WordCounter(commands.Cog):
     @commands.has_permissions(manage_roles=True)
     async def add_word_to_react_list(self, ctx, name, word):
         """
-                Do '!add_word_to_react_list <name> <word>'
-                For example: `!add_word_to_react_list snivy, serperior`
-                (don't include the <> or [] when running the command)
-                (don't use a comma in this command!)
-                Also works with '!awrl'
-                """
+        Do '!add_word_to_react_list <name> <word>'
+        For example: `!add_word_to_react_list snivy, serperior`
+        (don't include the <> or [] when running the command)
+        (don't use a comma in this command!)
+        Also works with '!awrl'
+        """
         rl_name = f"{ctx.guild.id}_{name}"
         if rl_name not in self.react_lists.keys():
             await ctx.send(f"No react list named {name} found.", delete_after=10)
@@ -114,6 +116,26 @@ class WordCounter(commands.Cog):
             await ctx.send(f"{word} is already in the react list for {name}.", delete_after=10)
             return await ctx.message.add_reaction(self.bot.failed_react)
         self.react_lists[rl_name]["words"].append(word)
+        return await ctx.message.add_reaction(self.bot.success_react)
+
+    @commands.command(name="remove_word_from_react_list", aliases=['rwrl'])
+    @commands.has_permissions(manage_roles=True)
+    async def remove_word_from_react_list(self, ctx, name, word):
+        """
+        Do '!remove_word_from_react_list <name> <word>'
+        For example: `!remove_word_from_react_list snivy, serperior`
+        (don't include the <> or [] when running the command)
+        (don't use a comma in this command!)
+        Also works with '!rwrl'
+        """
+        rl_name = f"{ctx.guild.id}_{name}"
+        if rl_name not in self.react_lists.keys():
+            await ctx.send(f"No react list named {name} found.", delete_after=10)
+            return await ctx.message.add_reaction(self.bot.failed_react)
+        if word not in self.react_lists[rl_name]["words"]:
+            await ctx.send(f"{word} is not in the react list for {name}.", delete_after=10)
+            return await ctx.message.add_reaction(self.bot.failed_react)
+        self.react_lists[rl_name]["words"].remove(word)
         return await ctx.message.add_reaction(self.bot.success_react)
 
     @commands.command(name='add_word_counter', aliases=['awc'])
@@ -171,14 +193,15 @@ class WordCounter(commands.Cog):
     @commands.command(name="list_react_lists", aliases=['lrl'])
     @commands.has_permissions(manage_roles=True)
     async def list_react_lists(self, ctx):
-        output = ""
+        output_parts = []
         for key in self.react_lists.keys():
             if self.react_lists[key]["guild_id"] == ctx.guild.id:
-                output += f"Name: {self.react_lists[key]['name']} - Emoji: {self.react_lists[key]['emoji']}\n"
+                output = f"Name: {self.react_lists[key]['name']} - Emoji: {self.react_lists[key]['emoji']}\n"
                 output += f"{', '.join(self.react_lists[key]['words'])}\n\n"
                 if self.react_lists[key]["channel_id"] != "none":
                     output += f"Active in {self.react_lists[key]['channel_id']}"
-        await ctx.send(output)
+                output_parts.append(output)
+        await utils.send_message_in_chunks(output_parts, ctx)
 
     @commands.command(name='my_count', aliases=['my'])
     async def my_count(self, ctx, raw_word):

@@ -13,6 +13,17 @@ import discord
 from clippy import checks
 
 
+async def send_message_in_chunks(message_parts, channel):
+    current_msg = ""
+    for part in message_parts:
+        if len(current_msg) + len(part) > 1999:
+            await channel.send(current_msg)
+            current_msg = ""
+        current_msg += part
+    if len(current_msg) > 0:
+        await channel.send(current_msg)
+
+
 def get_match(word_list: list, word: str, score_cutoff: int = 60, isPartial: bool = False, limit: int = 1):
     """Uses fuzzywuzzy to see if word is close to entries in word_list
 
