@@ -495,11 +495,14 @@ class CommentScrapeCog(commands.Cog):
             return f"$name:{user}"
         if user.upper().endswith("-ING"):
             return f"$name:{user}"
+        read_only_flag = False
         try:
             with open('ID_alias_list.json') as json_file:
                 ID_alias_list = json.load(json_file)
-        except:
+        except FileNotFoundError:
             ID_alias_list = {}
+        except:
+            read_only_flag = True
         if user in ID_alias_list:
             return ID_alias_list[user]
 
@@ -509,23 +512,26 @@ class CommentScrapeCog(commands.Cog):
         # to be made again
         response = requests.get(f"{self.wayforum_ep}/users/$name:{user}-PGO")
         if response.status_code != 404:
-            ID_alias_list[user] = response.json()["userID"]
-            with open('ID_alias_list.json', 'w') as outfile:
-                json.dump(ID_alias_list, outfile)
+            if not read_only_flag:
+                ID_alias_list[user] = response.json()["userID"]
+                with open('ID_alias_list.json', 'w') as outfile:
+                    json.dump(ID_alias_list, outfile)
             return response.json()["userID"]
 
         response = requests.get(f"{self.wayforum_ep}/users/$name:{user}-ING")
         if response.status_code != 404:
-            ID_alias_list[user] = response.json()["userID"]
-            with open('ID_alias_list.json', 'w') as outfile:
-                json.dump(ID_alias_list, outfile)
+            if not read_only_flag:
+                ID_alias_list[user] = response.json()["userID"]
+                with open('ID_alias_list.json', 'w') as outfile:
+                    json.dump(ID_alias_list, outfile)
             return response.json()["userID"]
 
         response = requests.get(f"{self.wayforum_ep}/users/$name:{user}")
         if response.status_code != 404:
-            ID_alias_list[user] = response.json()["userID"]
-            with open('ID_alias_list.json', 'w') as outfile:
-                json.dump(ID_alias_list, outfile)
+            if not read_only_flag:
+                ID_alias_list[user] = response.json()["userID"]
+                with open('ID_alias_list.json', 'w') as outfile:
+                    json.dump(ID_alias_list, outfile)
             return response.json()["userID"]
 
         return f"$name:{user}"
