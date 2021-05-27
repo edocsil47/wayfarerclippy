@@ -5,6 +5,7 @@ import json
 import discord
 import requests
 from bs4 import BeautifulSoup
+from datetime import datetime
 
 from discord.ext import commands
 
@@ -21,6 +22,9 @@ class CommentScrapeCog(commands.Cog):
         self.post_ids = [p["discussionID"] for p in self.post_info]
         self.characterLimit = 280
         self.profileIconURL = "https://us.v-cdn.net/6032079/uploads/userpics/801/pQAD25QEXJZ5H.png"
+        self.status_tiers = [8,48] # max hours for "active" status, max hours before "offline" status
+        self.status_indicators = ["🟢", "🟡", "🔴"] # emoji for online status; active, away, offline
+        self.wayforum_ep = "https://community.wayfarer.nianticlabs.com/api/v2" # API endpoint
 
     def _load_file(self, filename):
         if not os.path.exists(filename):
@@ -475,7 +479,171 @@ class CommentScrapeCog(commands.Cog):
                         await output_channel.send(embed=m)
 
             await asyncio.sleep(self.bot.check_delay_minutes * 60)
+    
+    @staticmethod
+    def handle_forum_username(user):
+        """ Allows forum functions to use smart IDs if desired,
+        e.g. !profile 9
+          or !profile NianticCasey-ING
+          or !profile NianticCasey
+        can all be used. The latter case (alias) will be cached to avoid making
+        excess requests to the API.
+        """
+        if user.isdigit() and len(user) < 7: # *probably* won't have any players with numerical usernames under 6 characters join the forums without a game suffix right?
+            return user
+        if user.upper().endswith("-PGO"):
+            return f"$name:{user}"
+        if user.upper().endswith("-ING"):
+            return f"$name:{user}"
+        read_only_flag = False
+        try:
+            with open('ID_alias_list.json') as json_file:
+                ID_alias_list = json.load(json_file)
+        except FileNotFoundError:
+            ID_alias_list = {}
+        except:
+            read_only_flag = True
+        if user in ID_alias_list:
+            return ID_alias_list[user]
 
+        # if user is not easily parsable or currently in the alias list, will make
+        # API calls to search for the currect game suffix. Worst case is three API
+        # calls being made for an invalid username. Successful calls will not have
+        # to be made again
+        response = requests.get(f"{self.wayforum_ep}/users/$name:{user}-PGO")
+        if response.status_code != 404:
+            if not read_only_flag:
+                ID_alias_list[user] = response.json()["userID"]
+                with open('ID_alias_list.json', 'w') as outfile:
+                    json.dump(ID_alias_list, outfile)
+            return response.json()["userID"]
+
+        response = requests.get(f"{self.wayforum_ep}/users/$name:{user}-ING")
+        if response.status_code != 404:
+            if not read_only_flag:
+                ID_alias_list[user] = response.json()["userID"]
+                with open('ID_alias_list.json', 'w') as outfile:
+                    json.dump(ID_alias_list, outfile)
+            return response.json()["userID"]
+
+        response = requests.get(f"{self.wayforum_ep}/users/$name:{user}")
+        if response.status_code != 404:
+            if not read_only_flag:
+                ID_alias_list[user] = response.json()["userID"]
+                with open('ID_alias_list.json', 'w') as outfile:
+                    json.dump(ID_alias_list, outfile)
+            return response.json()["userID"]
+
+        return f"$name:{user}"
+
+    @staticmethod
+    def get_online_tier(elapsed):
+        """ Returns appropriate online status tier from time offline in seconds"""
+        if elapsed < self.status_tiers[0]*3600:
+            return 0
+        elif elapsed < self.status_tiers[1]*3600:
+            return 1
+        else:
+            return 2
+
+    @staticmethod
+    def forum_paginated_request(url):
+        """ Returns all pages for forum API calls that can have pagination"""
+        i = 1
+        pages = []
+        last_page = []
+        while True:
+            response = requests.get(f"{url}&page={i}")
+            if response.json() == last_page: # break loop if pages are not iterating
+                return pages
+            if response.json() == []: # break loop if page is blank
+                return pages
+            pages += response.json()
+            last_page = response.json()
+            i += 1
+
+    @commands.command(hidden=True, name="get_online", aliases=["ol","online"])
+    async def get_online(ctx, user):
+        """ Returns the last time a user was active on the forum"""
+        response_profile = requests.get(f"{self.wayforum_ep}/users/{handle_forum_username(user)}")
+        profile = response_profile.json()
+        try:
+            date_last_active = profile["dateLastActive"]
+        except:
+            error_response = await ctx.send(f"Sorry, I wasn't able to find a forum user named **{user}**")
+            return await self._cleanup(ctx.message, error_response)
+        elapsed = datetime.now().timestamp() - datetime.fromisoformat(date_last_active).timestamp()
+        await ctx.send(f"{self.status_indicators[get_online_tier(elapsed)]} {profile['name']} was last online **{int(elapsed/3600)} hours ago** (at {date_last_active})")
+
+    @commands.command(hidden=True, name="get_niantic_roles", aliases=["nia"])
+    async def get_niantic_roles(ctx):
+        """ Returns a list of all forum staff with their online status"""
+        response_nia = forum_paginated_request(f"{self.wayforum_ep}/users?roleID=$name:Niantic")
+        response_mod = forum_paginated_request(f"{self.wayforum_ep}/users?roleID=$name:Moderator")
+        response_admin = forum_paginated_request(f"{self.wayforum_ep}/users?roleID=$name:Administrator")
+        people = response_nia + response_mod + response_admin
+
+        # categorize users by online status
+        green = []; yellow = []; red = []
+        for p in people:
+            elapsed = datetime.now().timestamp() - datetime.fromisoformat(p["dateLastActive"]).timestamp()
+            if get_online_tier(elapsed) == 0:
+                green += [p["name"]]
+            elif get_online_tier(elapsed) == 1:
+                yellow += [p["name"]]
+            else:
+                red += [p["name"]]
+
+        # create text for embed
+        embed_content = ""
+        if green:
+            green = list(set(green))
+            green.sort()
+            embed_content += f"{self.status_indicators[0]} **Online in the past {self.status_tiers[0]} hours:**\n\
+                               {', '.join(green)}\n\n"
+        if yellow:
+            yellow = list(set(yellow))
+            yellow.sort()
+            embed_content += f"{self.status_indicators[1]} **Online in the past {self.status_tiers[1]} hours:**\n\
+                               {', '.join(yellow)}\n\n"
+        if red:
+            red = list(set(red))
+            red.sort()
+            embed_content += f"{self.status_indicators[2]} **Not online for more than {self.status_tiers[1]} hours:**\n\
+                               {', '.join(red)}\n"
+
+        embed = discord.Embed(
+            title = "Niantic users on the Wayforum:",
+            description = embed_content,
+            color = 16533267
+        )
+        await ctx.send(embed=embed)
+
+    @commands.command(hidden=True, name="get_forum_profile", aliases=["fpf"])
+    async def get_forum_profile(ctx, user):
+        """ Returns information from a forum user's profile"""
+        response_profile = requests.get(f"{self.wayforum_ep}/users/{handle_forum_username(user)}")
+        profile = response_profile.json()
+        try:
+            date_last_active = profile["dateLastActive"]
+        except:
+            error_response = await ctx.send(f"Sorry, I wasn't able to find a forum user named **{user}**")
+            return await self._cleanup(ctx.message, error_response)
+        elapsed = datetime.now().timestamp() - datetime.fromisoformat(date_last_active).timestamp()
+        roles = [r["name"] for r in profile["roles"]]
+        embed = discord.Embed(
+            title = profile["name"],
+            description = f"User ID: {profile['userID']}\n\
+                            Roles: {', '.join(roles)}\n\
+                            Join Date: {profile['dateInserted']}\n\
+                            Comments: {profile['countComments']}\n\
+                            Discussions: {profile['countDiscussions']}",
+            url = profile["url"],
+            color = 16533267
+        )
+        embed.set_footer(text = f"{self.status_indicators[get_online_tier(elapsed)]} Last online: {int(elapsed/3600)} hours ago (at {date_last_active})")
+        embed.set_thumbnail(url = profile["photoUrl"])
+        await ctx.send(embed=embed)
 
 def setup(bot):
     bot.add_cog(CommentScrapeCog(bot))
