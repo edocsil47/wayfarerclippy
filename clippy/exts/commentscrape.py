@@ -572,7 +572,8 @@ class CommentScrapeCog(commands.Cog):
         except:
             error_response = await ctx.send(f"Sorry, I wasn't able to find a forum user named **{user}**")
             return await self._cleanup(ctx.message, error_response)
-        elapsed = datetime.now().timestamp() - datetime.fromisoformat(date_last_active).timestamp()
+        # elapsed = datetime.now().timestamp() - datetime.fromisoformat(date_last_active).timestamp() # requires python 3.7
+        elapsed = datetime.now().timestamp() - datetime.strptime(date_last_active, "%Y-%m-%dT%H:%M:%S%z").timestamp()
         await ctx.send(f"{self.status_indicators[get_online_tier(elapsed)]} {profile['name']} was last online **{int(elapsed/3600)} hours ago** (at {date_last_active})")
 
     @commands.command(hidden=True, name="get_niantic_roles", aliases=["nia"])
@@ -586,7 +587,8 @@ class CommentScrapeCog(commands.Cog):
         # categorize users by online status
         green = []; yellow = []; red = []
         for p in people:
-            elapsed = datetime.now().timestamp() - datetime.fromisoformat(p["dateLastActive"]).timestamp()
+            # elapsed = datetime.now().timestamp() - datetime.fromisoformat(p["dateLastActive"]).timestamp() # requires python 3.7
+            elapsed = datetime.now().timestamp() - datetime.strptime(p["dateLastActive"], "%Y-%m-%dT%H:%M:%S%z").timestamp()
             if get_online_tier(elapsed) == 0:
                 green += [p["name"]]
             elif get_online_tier(elapsed) == 1:
@@ -629,7 +631,8 @@ class CommentScrapeCog(commands.Cog):
         except:
             error_response = await ctx.send(f"Sorry, I wasn't able to find a forum user named **{user}**")
             return await self._cleanup(ctx.message, error_response)
-        elapsed = datetime.now().timestamp() - datetime.fromisoformat(date_last_active).timestamp()
+        # elapsed = datetime.now().timestamp() - datetime.fromisoformat(date_last_active).timestamp() # requires python 3.7
+        elapsed = datetime.now().timestamp() - datetime.strptime(date_last_active, "%Y-%m-%dT%H:%M:%S%z").timestamp()
         roles = [r["name"] for r in profile["roles"]]
         embed = discord.Embed(
             title = profile["name"],
