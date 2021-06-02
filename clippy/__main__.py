@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import sys
 
+import aiohttp
 import discord
 
 from clippy.bot import ClippyBot
@@ -81,6 +82,8 @@ Events
 """
 @Clippy.event
 async def on_ready():
+    if not Clippy.session:
+        Clippy.session = aiohttp.ClientSession()
     Clippy.owner = discord.utils.get(
         Clippy.get_all_members(), id=config['master'])
     if Clippy.initial_start:

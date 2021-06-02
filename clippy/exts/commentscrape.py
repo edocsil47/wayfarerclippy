@@ -6,6 +6,7 @@ import discord
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
+from datetime import date
 
 from discord.ext import commands
 
@@ -333,14 +334,18 @@ class CommentScrapeCog(commands.Cog):
         for user_id, user in self.users.items():
             comments_page, discussions_page = user["last_comments_page"], user["last_discussions_page"]
             latest_comment, latest_discussion = user["latest_comment"], user["latest_discussion"]
+            last_page = []
 
             try:
                 while True:
-                    discussions = requests.get(
-                        f"https://community.wayfarer.nianticlabs.com/api/v2/discussions?insertUserID={user_id}"
-                        f"&limit=100&page={discussions_page}").json()
-                    if len(discussions) < 1:
+                    url = f"https://community.wayfarer.nianticlabs.com/api/v2/discussions?insertUserID={user_id}" \
+                          f"&limit=100&page={discussions_page}"
+                    async with self.bot.session.get(url=url) as response:
+                        await response
+                    if response.json() == last_page or response.json() == []:
                         break
+                    last_page = response.json()
+                    discussions = response.json()
                     if len(discussions) > 2:
                         discussions.reverse()
                     for discussion in discussions:
@@ -356,11 +361,17 @@ class CommentScrapeCog(commands.Cog):
             except Exception as e:
                 self.bot.logger.warn(f"Failed to update discussions for user {user['name']}\nFull error: {e}")
 
+            last_page = []
             try:
                 while True:
-                    comments = requests.get(
-                        "https://community.wayfarer.nianticlabs.com/api/v2/comments?insertUserID=" + str(
-                            user_id) + "&limit=100&page=" + str(comments_page)).json()
+                    url = "https://community.wayfarer.nianticlabs.com/api/v2/comments?insertUserID=" + str(
+                            user_id) + "&limit=100&page=" + str(comments_page)
+                    async with self.bot.session.get(url=url) as response:
+                        await response
+                    if response.json() == last_page or response.json() == []:
+                        break
+                    last_page = response.json()
+                    comments = response.json()
                     if len(comments) > 0:
                         for comment in comments:
                             if comment["commentID"] > latest_comment:
@@ -479,9 +490,8 @@ class CommentScrapeCog(commands.Cog):
                         await output_channel.send(embed=m)
 
             await asyncio.sleep(self.bot.check_delay_minutes * 60)
-    
-    @staticmethod
-    def handle_forum_username(user):
+
+    def handle_forum_username(self, user):
         """ Allows forum functions to use smart IDs if desired,
         e.g. !profile 9
           or !profile NianticCasey-ING
@@ -536,8 +546,7 @@ class CommentScrapeCog(commands.Cog):
 
         return f"$name:{user}"
 
-    @staticmethod
-    def get_online_tier(elapsed):
+    def get_online_tier(self, elapsed):
         """ Returns appropriate online status tier from time offline in seconds"""
         if elapsed < self.status_tiers[0]*3600:
             return 0
@@ -554,18 +563,17 @@ class CommentScrapeCog(commands.Cog):
         last_page = []
         while True:
             response = requests.get(f"{url}&page={i}")
-            if response.json() == last_page: # break loop if pages are not iterating
-                return pages
-            if response.json() == []: # break loop if page is blank
+            # break loop if pages are not iterating or if page is blank
+            if response.json() == last_page or response.json() == []:
                 return pages
             pages += response.json()
             last_page = response.json()
             i += 1
 
     @commands.command(hidden=True, name="get_online", aliases=["ol","online"])
-    async def get_online(ctx, user):
+    async def get_online(self, ctx, user):
         """ Returns the last time a user was active on the forum"""
-        response_profile = requests.get(f"{self.wayforum_ep}/users/{handle_forum_username(user)}")
+        response_profile = requests.get(f"{self.wayforum_ep}/users/{self.handle_forum_username(user)}")
         profile = response_profile.json()
         try:
             date_last_active = profile["dateLastActive"]
@@ -573,23 +581,23 @@ class CommentScrapeCog(commands.Cog):
             error_response = await ctx.send(f"Sorry, I wasn't able to find a forum user named **{user}**")
             return await self._cleanup(ctx.message, error_response)
         elapsed = datetime.now().timestamp() - datetime.fromisoformat(date_last_active).timestamp()
-        await ctx.send(f"{self.status_indicators[get_online_tier(elapsed)]} {profile['name']} was last online **{int(elapsed/3600)} hours ago** (at {date_last_active})")
+        await ctx.send(f"{self.status_indicators[self.get_online_tier(elapsed)]} {profile['name']} was last online **{int(elapsed/3600)} hours ago** (at {date_last_active})")
 
     @commands.command(hidden=True, name="get_niantic_roles", aliases=["nia"])
-    async def get_niantic_roles(ctx):
+    async def get_niantic_roles(self, ctx):
         """ Returns a list of all forum staff with their online status"""
-        response_nia = forum_paginated_request(f"{self.wayforum_ep}/users?roleID=$name:Niantic")
-        response_mod = forum_paginated_request(f"{self.wayforum_ep}/users?roleID=$name:Moderator")
-        response_admin = forum_paginated_request(f"{self.wayforum_ep}/users?roleID=$name:Administrator")
+        response_nia = self.forum_paginated_request(f"{self.wayforum_ep}/users?roleID=$name:Niantic")
+        response_mod = self.forum_paginated_request(f"{self.wayforum_ep}/users?roleID=$name:Moderator")
+        response_admin = self.forum_paginated_request(f"{self.wayforum_ep}/users?roleID=$name:Administrator")
         people = response_nia + response_mod + response_admin
 
         # categorize users by online status
         green = []; yellow = []; red = []
         for p in people:
             elapsed = datetime.now().timestamp() - datetime.fromisoformat(p["dateLastActive"]).timestamp()
-            if get_online_tier(elapsed) == 0:
+            if self.get_online_tier(elapsed) == 0:
                 green += [p["name"]]
-            elif get_online_tier(elapsed) == 1:
+            elif self.get_online_tier(elapsed) == 1:
                 yellow += [p["name"]]
             else:
                 red += [p["name"]]
@@ -620,9 +628,9 @@ class CommentScrapeCog(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command(hidden=True, name="get_forum_profile", aliases=["fpf"])
-    async def get_forum_profile(ctx, user):
+    async def get_forum_profile(self, ctx, user):
         """ Returns information from a forum user's profile"""
-        response_profile = requests.get(f"{self.wayforum_ep}/users/{handle_forum_username(user)}")
+        response_profile = requests.get(f"{self.wayforum_ep}/users/{self.handle_forum_username(user)}")
         profile = response_profile.json()
         try:
             date_last_active = profile["dateLastActive"]
@@ -641,9 +649,11 @@ class CommentScrapeCog(commands.Cog):
             url = profile["url"],
             color = 16533267
         )
-        embed.set_footer(text = f"{self.status_indicators[get_online_tier(elapsed)]} Last online: {int(elapsed/3600)} hours ago (at {date_last_active})")
+        embed.set_footer(text = f"{self.status_indicators[self.get_online_tier(elapsed)]} Last online: {int(elapsed/3600)} hours ago (at {date_last_active})")
         embed.set_thumbnail(url = profile["photoUrl"])
         await ctx.send(embed=embed)
 
+
 def setup(bot):
     bot.add_cog(CommentScrapeCog(bot))
+
