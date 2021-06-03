@@ -67,6 +67,7 @@ class ClippyBot(commands.AutoShardedBot):
         self.initial_start = True
         self.last_random = -1
         self.last_rainbow_random = -1
+        self.session = None
         self.privacy_statement = "Hi! I see you're interested to know what data I collect about you. I'm a bot that " \
                                  "monitors channels on this server for my name. I don't store any messages, I just " \
                                  "watch for fun words like 'oof' and 'bruh' and count who says them. " \
